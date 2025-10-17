@@ -157,7 +157,26 @@
 
       btnExemplo.addEventListener('click', () => {
         loadedKmlName = 'exemplo.kml';
-        loadedKmlText = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n    <name>Linhas Exemplo</name>\n    <Placemark>\n      <name>Linha A</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <coordinates>-46.7000,-23.6000,0 -46.6900,-23.5900,0</coordinates>\n      </LineString>\n    </Placemark>\n    <Placemark>\n      <name>Linha B</name>\n      <LineString>\n        <tessellate>1</tessellate>\n        <coordinates>-46.6900,-23.6000,0 -46.6800,-23.6000,0 -46.6700,-23.5900,0</coordinates>\n      </LineString>\n    </Placemark>\n  </Document>\n</kml>`;
+        loadedKmlText = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Linhas Exemplo</name>
+    <Placemark>
+      <name>Linha A</name>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>-46.7000,-23.6000,0 -46.6900,-23.5900,0</coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>Linha B</name>
+      <LineString>
+        <tessellate>1</tessellate>
+        <coordinates>-46.6900,-23.6000,0 -46.6800,-23.6000,0 -46.6700,-23.5900,0</coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>`;
         const { linesCount, placemarks, lines } = scanKmlDetailed(loadedKmlText);
         currentLines = lines; currentPoints = [];
         drawLinesOnMap(currentLines); pointLayer.clearLayers();
@@ -262,7 +281,8 @@
         const outKml = buildOutputKml(doc, points);
         const pointsForMap = points.map(p => ({ lat: p.lat, lon: p.lon, name: p.name }));
         let warn = '';
-        if (warnSmallLines && coveredLines < perLine.length && N >= perLine.length) warn = `\nAviso: algumas linhas têm comprimento muito pequeno (ou foram totalmente excluídas) e não receberam pontos.`;
+        if (warnSmallLines && coveredLines < perLine.length && N >= perLine.length) warn = `
+Aviso: algumas linhas têm comprimento muito pequeno (ou foram totalmente excluídas) e não receberam pontos.`;
         return { kml: outKml, totalPoints: points.length, linesProcessed: perLine.length, pointsForMap, warn };
       }
 
@@ -279,7 +299,7 @@
         try { const gj = exclusionLayer.toGeoJSON(); const polys = []; if (!gj || !gj.features) return polys; for (const f of gj.features) { if (f && f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')) polys.push(f); } return polys; } catch { return []; }
       }
 
-      // Combina trechos recortados com linhas não afetadas, garantindo que TODAS as linhas apareçam
+      // Novo: combina trechos recortados com linhas não afetadas, garantindo que TODAS as linhas apareçam
       function buildSegmentsMergedWithExclusions(lineEntries) {
         const full = buildSegments(lineEntries);
         const polys = getExclusionPolygons();
@@ -291,6 +311,7 @@
         const segs = excl.segments.slice();
         for (let lineId = 0; lineId < lineEntries.length; lineId++) {
           if (!present.has(lineId)) {
+            // Linha não foi afetada pelos polígonos (ou falhou split) → inclui segmentos originais
             for (const s of full.segments) {
               if (s.lineId === lineId) { segs.push(s); total += s.len; }
             }
@@ -354,81 +375,26 @@
       function buildOutputKml(sourceDoc, points) {
         const kmlDoc = sourceDoc.implementation.createDocument(null, null);
         let kmlRoot = sourceDoc.getElementsByTagName('kml')[0];
-        if (kmlRoot) kmlRoot = kmlRoot.cloneNode(true);
-        else { kmlRoot = sourceDoc.createElement('kml'); kmlRoot.setAttribute('xmlns', 'http://www.opengis.net/kml/2.2'); kmlRoot.appendChild(sourceDoc.createElement('Document')); }
-        let documentNode = kmlRoot.getElementsByTagName('Document')[0];
-        if (!documentNode) { documentNode = sourceDoc.createElement('Document'); kmlRoot.appendChild(documentNode); }
-
-        // Estilo do ponto (HTTPS para evitar mixed content)
+        if (kmlRoot) kmlRoot = kmlRoot.cloneNode(true); else { kmlRoot = sourceDoc.createElement('kml'); kmlRoot.setAttribute('xmlns', 'http://www.opengis.net/kml/2.2'); kmlRoot.appendChild(sourceDoc.createElement('Document')); }
+        let documentNode = kmlRoot.getElementsByTagName('Document')[0]; if (!documentNode) { documentNode = sourceDoc.createElement('Document'); kmlRoot.appendChild(documentNode); }
         const styleId = 'ptStyle';
-        if (!kmlRoot.querySelector(`#${styleId}`)) {
-          const style = sourceDoc.createElement('Style');
-          style.setAttribute('id', styleId);
-          const iconStyle = sourceDoc.createElement('IconStyle');
-          const color = sourceDoc.createElement('color');
-          color.textContent = 'ff00a5ff';
-          const scale = sourceDoc.createElement('scale');
-          scale.textContent = '1.1';
-          const icon = sourceDoc.createElement('Icon');
-          const href = sourceDoc.createElement('href');
-          href.textContent = 'https://maps.google.com/mapfiles/kml/paddle/blu-circle.png';
-          icon.appendChild(href);
-          iconStyle.appendChild(color);
-          iconStyle.appendChild(scale);
-          iconStyle.appendChild(icon);
-          style.appendChild(iconStyle);
-          documentNode.appendChild(style);
-        }
-
-        const folder = sourceDoc.createElement('Folder');
-        const fname = sourceDoc.createElement('name');
-        fname.textContent = 'Pontos Gerados';
-        folder.appendChild(fname);
-
-        for (const p of points) {
-          const pm = sourceDoc.createElement('Placemark');
-          const nm = sourceDoc.createElement('name');
-          nm.textContent = p.name;
-          pm.appendChild(nm);
-          const styleUrl = sourceDoc.createElement('styleUrl');
-          styleUrl.textContent = `#${styleId}`;
-          pm.appendChild(styleUrl);
-          const pt = sourceDoc.createElement('Point');
-          const coords = sourceDoc.createElement('coordinates');
-          coords.textContent = `${Number(p.lon).toFixed(6)},${Number(p.lat).toFixed(6)},${Number(p.alt ?? 0).toFixed(2)}`;
-          pt.appendChild(coords);
-          pm.appendChild(pt);
-          folder.appendChild(pm);
-        }
-
-        documentNode.appendChild(folder);
-        kmlDoc.appendChild(kmlRoot);
-        const xml = new XMLSerializer().serializeToString(kmlDoc);
-        return xml.startsWith('<?xml') ? xml : `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
+        if (!kmlRoot.querySelector(`#${styleId}`)) { const style = sourceDoc.createElement('Style'); style.setAttribute('id', styleId); const iconStyle = sourceDoc.createElement('IconStyle'); const color = sourceDoc.createElement('color'); color.textContent = 'ff00a5ff'; const scale = sourceDoc.createElement('scale'); scale.textContent = '1.1'; const icon = sourceDoc.createElement('Icon'); const href = sourceDoc.createElement('href'); href.textContent = 'http://maps.google.com/mapfiles/kml/paddle/blu-circle.png'; icon.appendChild(href); iconStyle.appendChild(color); iconStyle.appendChild(scale); iconStyle.appendChild(icon); style.appendChild(iconStyle); documentNode.appendChild(style); }
+        const folder = sourceDoc.createElement('Folder'); const fname = sourceDoc.createElement('name'); fname.textContent = 'Pontos Gerados'; folder.appendChild(fname);
+        for (const p of points) { const pm = sourceDoc.createElement('Placemark'); const nm = sourceDoc.createElement('name'); nm.textContent = p.name; pm.appendChild(nm); const styleUrl = sourceDoc.createElement('styleUrl'); styleUrl.textContent = `#${styleId}`; pm.appendChild(styleUrl); const pt = sourceDoc.createElement('Point'); const coords = sourceDoc.createElement('coordinates'); coords.textContent = `${Number(p.lon).toFixed(6)},${Number(p.lat).toFixed(6)},${Number(p.alt ?? 0).toFixed(2)}`; pt.appendChild(coords); pm.appendChild(pt); folder.appendChild(pm); }
+        documentNode.appendChild(folder); kmlDoc.appendChild(kmlRoot);
+        const xml = new XMLSerializer().serializeToString(kmlDoc); return xml.startsWith('<?xml') ? xml : `<?xml version="1.0" encoding="UTF-8"?>
+${xml}`;
       }
 
       // Map helpers
       function drawLinesOnMap(lines) {
         lineLayer.clearLayers(); const latlngsForBounds = [];
-        for (const ln of lines) {
-          const latlngs = ln.coords.map(c => [c.lat, c.lon]);
-          if (latlngs.length >= 2) {
-            const poly = L.polyline(latlngs, { color: '#60a5fa', weight: 3 });
-            poly.bindPopup(ln.name);
-            lineLayer.addLayer(poly);
-            latlngsForBounds.push(...latlngs);
-          }
-        }
+        for (const ln of lines) { const latlngs = ln.coords.map(c => [c.lat, c.lon]); if (latlngs.length >= 2) { const poly = L.polyline(latlngs, { color: '#60a5fa', weight: 3 }); poly.bindPopup(ln.name); lineLayer.addLayer(poly); latlngsForBounds.push(...latlngs); } }
         if (latlngsForBounds.length) map.fitBounds(L.latLngBounds(latlngsForBounds), { padding: [20, 20] });
       }
       function drawPointsOnMap(points) {
         pointLayer.clearLayers(); const latlngsForBounds = [];
-        for (const p of points) {
-          const m = L.circleMarker([p.lat, p.lon], { radius: 5, color: '#22c55e', weight: 2, fillOpacity: 0.8 });
-          m.bindTooltip(p.name, { permanent: false, direction: 'top' });
-          pointLayer.addLayer(m);
-          latlngsForBounds.push([p.lat, p.lon]);
-        }
+        for (const p of points) { const m = L.circleMarker([p.lat, p.lon], { radius: 5, color: '#22c55e', weight: 2, fillOpacity: 0.8 }); m.bindTooltip(p.name, { permanent: false, direction: 'top' }); pointLayer.addLayer(m); latlngsForBounds.push([p.lat, p.lon]); }
         if (latlngsForBounds.length) map.fitBounds(L.latLngBounds(latlngsForBounds), { padding: [20, 20] });
       }
 
