@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relatório de Aplicação - Top Gun</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/togeojson@0.16.0/togeojson.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <style>
+    @media print {
+      body { -webkit-print-color-adjust: exact; }
+      #fileKML, #btnPrint { display: none; }
+      /* Remova ou comente as linhas abaixo para manter o visual igual ao da tela */
+      /*
+      body::before {
+        top: -7cm; left: -17cm;
+        width: 36cm; height: 22cm;
+      }
+      body::after {
+        bottom: 8cm; right: 32,5cm;
+        width: 13cm; height: 35cm;
+      }
+      */
+    }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+      position: relative;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::before {
+      content: "";
+      position: absolute;
+      top:-7cm; left: -17cm;
+      width: 36cm; height: 22cm;
+      background: url('data:image/svg+xml;utf8,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><g opacity="0.18"><path d="M10,50 Q10,20 50,10 Q90,20 90,50 Q90,80 50,90 Q10,80 10,50 Z" fill="%236b7a4b"/><path d="M20,50 Q20,25 50,20 Q80,25 80,50 Q80,75 50,80 Q20,75 20,50 Z" fill="white"/></g></svg>') no-repeat center/contain;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    body::after {
+      content: "";
+      position: absolute;
+      bottom: 8cm; right: 32.5cm;
+      width: 13cm; height: 35cm;
+      background: url('data:image/svg+xml;utf8,<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg"><g opacity="0.12"><path d="M40,10 Q70,20 70,40 Q70,60 40,70 Q10,60 10,40 Q10,20 40,10 Z" fill="%236b7a4b"/></g></svg>') no-repeat center/contain;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* Garante que na impressão também fique dentro da folha */
+    @media print {
+      body { -webkit-print-color-adjust: exact; }
+      #fileKML, #btnPrint { display: none; }
+      /* Remova ou comente as linhas abaixo para manter o visual igual ao da tela */
+      /*
+      body::before {
+        top: -7cm; left: -17cm;
+        width: 36cm; height: 22cm;
+      }
+      body::after {
+        bottom: 8cm; right: 32,5cm;
+        width: 13cm; height: 35cm;
+      }
+      */
+    }
+    .container { width: 21cm; height: 29.7cm; padding: 1cm; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; position: relative; z-index: 1; }
+    .header {
+      background: black;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+    }
+    .header .title {
+      flex: 1;
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+    }
+    .header img {
+      height: 60px;
+      max-width: 120px;
+      object-fit: contain;
+      padding: 0;
+    }
+    .header .logo-left {
+      margin-right: 20px;
+    }
+    .header .logo-right {
+      margin-left: 20px;
+    }
+    .title { font-size: 20px; font-weight: bold; }
+    .section-title { margin-top: 15px; font-size: 14px; font-weight: 700; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 20px; margin-top: 10px; }
+    .grid label { font-weight: 600; font-size: 13px; color: #444; }
+    .grid .value { font-size: 13px; color: #111; display: flex; align-items: center; }
+    .grid input[type=text], .grid input[type=date] {
+      width: 100%; border: none; border-bottom: 1px solid #aaa; font-size: 13px; background: transparent;
+    }
+    /* Deixa o select do Piloto com a mesma indentação/estilo dos inputs */
+    .grid select {
+      width: 100%;
+      border: none;
+      border-bottom: 1px solid #aaa;
+      font-size: 13px;
+      background: transparent;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    #map { width: 100%; height: 500px; margin-top: 20px; border: 1px solid #ccc; }
+    .actions { text-align: center; margin-top: 10px; }
+    .footer { font-size: 11px; text-align: center; color: #555; margin-top: 10px; border-top: 1px solid #ddd; padding-top: 5px; }
+
+    /* Adicione este CSS para a seta norte */
+    
+    .leaflet-control.legend {
+      background: #fdfdfd8a;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    }
+    /* Aparência de impressão: campos como texto */
+    @media print {
+      .grid input[type=text],
+      .grid input[type=date],
+      .grid select,
+      input[type=text],
+      input[type=date],
+      select {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
+        -webkit-appearance: none;
+        appearance: none;
+        padding: 0 !important;
+      }
+      select::-ms-expand { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div>
+      <div class="header">
+        <img class="logo-left" src="https://i.imgur.com/AuO3E5y.png" alt="Logo Esquerda" />
+        <div class="title">RELATÓRIO DE APLICAÇÃO</div>
+        <img class="logo-right" src="https://i.imgur.com/RMtSHww.png" alt="Logo Direita" />
+      </div>
+
+      <div class="section-title">Identificação</div>
+      <div class="grid">
+        <div><label>Ordem de Serviço:</label><input id="os" type="text" /></div>
+        <div><label>Data de Liberação:</label><input id="data" type="date" /></div>
+        <div><label>Piloto:</label><select id="piloto"><option value="Victor Hugo">Victor Hugo</option><option value="Pedro">Pedro</option><option value="Maicon">Maicon</option></select></div>
+        <div><label>Distância percorrida pelo drone:</label><div id="distTotal" class="value">-</div></div>
+        <div><label>Velocidade média de aplicação (m/s):</label><input id="velMedia" type="text" value="9~10 m/s" /></div>
+        <div><label>Equipamento:</label><input id="equip" type="text" value="Xfly 800" /></div>
+      </div>
+
+      <div class="section-title">Dados Climáticos</div>
+      <div class="grid">
+        <div>
+          <label>Temperatura Inicial (°C):</label>
+          <input id="tempIni" type="text" value="" />
+        </div>
+        <div>
+          <label>Temperatura Final (°C):</label>
+          <input id="tempFim" type="text" value="" />
+        </div>
+        <div>
+          <label>Umidade Inicial (%):</label>
+          <input id="umiIni" type="text" value="" />
+        </div>
+        <div>
+          <label>Umidade Final (%):</label>
+          <input id="umiFim" type="text" value="" />
+        </div>
+        <div>
+          <label>Vento Inicial (km/h):</label>
+          <input id="ventoIni" type="text" value="" />
+        </div>
+        <div>
+          <label>Vento Final (km/h):</label>
+          <input id="ventoFim" type="text" value="" />
+        </div>
+      </div>
+
+      <div class="section-title">Resultados</div>
+      <div class="grid">
+        <div>
+          <label>Cultura:</label>
+          <input id="cultura" type="text" value="Cana de açúcar" />
+        </div>
+        <div>
+          <label>Área aplicada (ha):</label>
+          <input id="area" type="text" value="" />
+        </div>
+        <div>
+          <label>Altura média (m):</label>
+          <input id="altura" type="text" value="30 m" />
+        </div>
+        <div>
+          <label>Largura da faixa (m):</label>
+          <input id="larguraFaixa" type="text" value="" />
+        </div>
+        <div>
+          <label>Tubetes liberados:</label>
+          <div id="qtPontos" class="value">-</div>
+        </div>
+        <div>
+          <label>Distância entre tubetes (m):</label>
+          <div id="mediaPontos" class="value">40 m</div>
+        </div>
+      </div>
+
+      <div id="map" style="position: relative;">
+        <img src="https://raw.githubusercontent.com/robertoschiro/leaflet-north-arrow/main/example/north-arrow.svg" class="north-arrow" alt="Norte" />
+      </div>
+    </div>
+    <div class="actions">
+      <input type="file" id="fileKML" accept=".kml" />
+      <button id="btnPrint" onclick="window.print()">Imprimir Relatório</button>
+    </div>
+    <div class="footer">
+      Top Gun Pulverizações - Tecnologia, excelência e resultado em pulverização agrícola com drones.
+    </div>
+  </div>
+
+<script>
+let map;
+const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
+function meters(a, b) { return turf.distance(turf.point(a), turf.point(b), { units: 'meters' }); }
+
+// Formata inputs para sempre exibirem a unidade automaticamente
+// e permite digitar decimais (ex.: 2,8) mantendo o cursor antes da unidade.
+function attachUnitInput(id, unit){
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  const format = (allowTrailingSep = true) => {
+    const raw = String(el.value || '');
+    // Mantém apenas dígitos e separadores, converte ponto para vírgula
+    let filtered = raw.replace(/[^0-9,\.]/g, '').replace(/\./g, ',');
+    // Mantém apenas a primeira vírgula
+    let out = '';
+    let seenSep = false;
+    for (const ch of filtered){
+      if (ch >= '0' && ch <= '9') out += ch;
+      else if (ch === ',' && !seenSep){ out += ','; seenSep = true; }
+    }
+    if (!allowTrailingSep && out.endsWith(',')) out = out.slice(0, -1);
+
+    if (!out){ el.value = ''; return; }
+    el.value = `${out}${unit}`;
+    // Posiciona o cursor antes da unidade para continuar digitando
+    const pos = out.length;
+    try { el.setSelectionRange(pos, pos); } catch(_e){}
+  };
+
+  el.addEventListener('input', () => format(true));
+  el.addEventListener('blur', () => format(false));
+  // Inicializa formato atual
+  format(true);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  map = L.map('map', { zoomDelta: 0.5, wheelPxPerZoomLevel: 60 }).setView([-15, -47], 12);
+  L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}').addTo(map);
+
+  // Adiciona legenda
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div', 'legend');
+    div.innerHTML = `
+      <b>Legenda</b><br>
+      <img src="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" style="width:16px;"> Ponto KML<br>
+      <span style="display:inline-block;width:20px;height:3px;background:#ffcc00;vertical-align:middle;"></span> Linha KML
+    `;
+    return div;
+  };
+  legend.addTo(map);
+
+  let kmlFileName = '';
+  let titleControl;
+
+  document.getElementById('fileKML').addEventListener('change', evt => {
+    const f = evt.target.files[0];
+    if (!f) return;
+    kmlFileName = f.name.replace(/\.[^/.]+$/, ""); // nome sem extensão
+    const rd = new FileReader();
+    rd.onload = () => {
+      const kmlDoc = new DOMParser().parseFromString(rd.result, 'text/xml');
+      const gj = toGeoJSON.kml(kmlDoc);
+      const points = gj.features.filter(f => f.geometry.type === 'Point');
+      const lines = gj.features.filter(f => f.geometry.type === 'LineString');
+
+      map.eachLayer(l => { if (l instanceof L.GeoJSON) map.removeLayer(l); });
+
+      // Remove título anterior se existir
+      if (titleControl) map.removeControl(titleControl);
+      // Adiciona título com nome do arquivo no topo do mapa
+      titleControl = L.control({ position: 'topright' });
+      titleControl.onAdd = function () {
+        const div = L.DomUtil.create('div', 'leaflet-control legend');
+        div.style.fontWeight = 'bold';
+        div.style.fontSize = '16px';
+        div.innerHTML = kmlFileName;
+        return div;
+      };
+      titleControl.addTo(map);
+
+      // Pontos com popup do nome do arquivo
+      L.geoJSON(points, {
+        pointToLayer: (_, latlng) => L.marker(latlng, { icon: blueIcon }),
+        onEachFeature: function (feature, layer) {
+          layer.bindPopup(`<b>${kmlFileName}</b>`);
+        }
+      }).addTo(map);
+
+      // Linhas com popup do nome do arquivo
+      const lineLayer = L.geoJSON(lines, {
+        style: { color: '#ffcc00', weight: 2 },
+        onEachFeature: function (feature, layer) {
+          layer.bindPopup(`<b>${kmlFileName}</b>`);
+        }
+      }).addTo(map);
+
+      if (lines.length > 0) {
+        map.fitBounds(lineLayer.getBounds());
+      } else if (points.length > 0) {
+        map.setView([points[0].geometry.coordinates[1], points[0].geometry.coordinates[0]], 16);
+      }
+
+      let distKm = 0;
+      lines.forEach(l => { distKm += turf.length(l, { units: 'kilometers' }); });
+      document.getElementById('distTotal').innerText = distKm.toFixed(2) + ' km';
+
+      document.getElementById('qtPontos').innerText = points.length;
+
+      document.getElementById('mediaPontos').innerText = '40 m';
+    };
+    rd.readAsText(f);
+  });
+  // Anexa unidades automáticas aos campos
+  attachUnitInput('tempIni','°C');
+  attachUnitInput('tempFim','°C');
+  attachUnitInput('umiIni','%');
+  attachUnitInput('umiFim','%');
+  attachUnitInput('ventoIni',' km/h');
+  attachUnitInput('ventoFim',' km/h');
+  attachUnitInput('area',' ha');
+  attachUnitInput('altura',' m');
+  attachUnitInput('larguraFaixa',' m');
+});
+</script>
+</body>
+</html>
