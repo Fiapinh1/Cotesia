@@ -76,9 +76,31 @@
           </div>
         </div>
 
+        <div class="row single">
+          <div class="field">
+            <label for="bordadura">Bordadura interna (m)</label>
+            <input id="bordadura" type="number" min="0" step="1" value="0" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label class="checkbox" style="gap:10px; align-items:center;">
+              <input id="habilitarPontos" type="checkbox" />
+              Adicionar pontos ao longo do caminho
+            </label>
+          </div>
+          <div class="field">
+            <label for="espPontos">Espaçamento entre pontos (m)</label>
+            <input id="espPontos" type="number" min="1" step="1" value="30" />
+          </div>
+        </div>
+
         <div class="actions">
           <button id="btnGerar" disabled>Gerar Linhas</button>
           <a id="downloadLink" class="secondary" href="#" download style="display:none;">Exportar Projeto (KML)</a>
+          <a id="downloadPtsLink" class="secondary" href="#" download style="display:none;">Exportar Pontos (KML)</a>
+          <button id="btnAnglePick" class="secondary" title="Clique em dois pontos no mapa para definir o ângulo">Definir Ângulo no Mapa</button>
           <button id="btnExemplo" class="secondary" title="Carrega um polígono de exemplo">Carregar Exemplo</button>
           <button id="btnLimpar" class="secondary">Limpar Linhas</button>
           <button id="btnProximo" class="secondary" title="Seleciona o próximo talhão" disabled>Próximo Talhão</button>
@@ -98,6 +120,7 @@
       let selectedIdx = -1;
       let polyLayer = null; // LayerGroup com todos os talhões
       let linesLayer = null;
+      let pointsLayer = null; // Pré-visualização de pontos
       let projectLayer = null; // Linhas acumuladas do projeto
       let projectPaths = [];
       let btnLimparProjetoRef = null; // criado dinamicamente
@@ -110,9 +133,14 @@
       const angEl = document.getElementById('angulo');
       const angBoxEl = document.getElementById('anguloBox');
       const altEl = document.getElementById('altura');
+      const borderEl = document.getElementById('bordadura');
+      const ptsToggleEl = document.getElementById('habilitarPontos');
+      const ptsSpacingEl = document.getElementById('espPontos');
       const namePrefixEl = document.getElementById('nomePrefixo');
       const btnGerar = document.getElementById('btnGerar');
       const dlEl = document.getElementById('downloadLink');
+      const dlPtsEl = document.getElementById('downloadPtsLink');
+      const btnAnglePick = document.getElementById('btnAnglePick');
       const btnExemplo = document.getElementById('btnExemplo');
       const btnLimpar = document.getElementById('btnLimpar');
       const btnProximo = document.getElementById('btnProximo');
@@ -135,6 +163,8 @@
         polyLayer = L.layerGroup().addTo(map);
         projectLayer = L.layerGroup().addTo(map);
         linesLayer = L.layerGroup().addTo(map);
+        pointsLayer = L.layerGroup().addTo(map);
+        angleGuideLayer = L.layerGroup().addTo(map);
       }
 
       initMap();
@@ -148,8 +178,12 @@
         if (v < 0) v = 0; if (v > 179) v = 179;
         angBoxEl.value = v; angEl.value = v; updatePreview();
       });
-      // Atualiza pré-visualização ao mudar espaçamento
+      // Atualiza pré-visualização ao mudar espaçamento e bordadura
       espEl.addEventListener('input', () => { updatePreview(); });
+      borderEl.addEventListener('input', () => { updatePreview(); });
+      // Atualiza quando alterna pontos e quando muda espaçamento de pontos
+      ptsToggleEl.addEventListener('change', () => { updatePreview(); });
+      ptsSpacingEl.addEventListener('input', () => { updatePreview(); });
 
       // Leitura e parse de KML (múltiplos polígonos)
       kmlFileEl.addEventListener('change', async (e) => {
@@ -158,7 +192,7 @@
         const text = await f.text();
         const res = extractPolygons(text);
         if (!res || res.length === 0) { logMsg('Nenhum polígono válido encontrado no KML.', 'error'); btnGerar.disabled = true; btnProximo.disabled = true; return; }
-        polygons = res; selectedIdx = -1; polygonCoords = null; btnGerar.disabled = true; btnProximo.disabled = (polygons.length <= 1); dlEl.style.display = 'none';
+        polygons = res; selectedIdx = -1; polygonCoords = null; btnGerar.disabled = true; btnProximo.disabled = (polygons.length <= 1); dlEl.style.display = 'none'; dlPtsEl.style.display = 'none';
         drawAllPolygons(polygons);
         const totalVerts = polygons.reduce((s,p)=>s+p.coords.length,0);
         logMsg(`Carregados ${polygons.length} talhão(ões), ${totalVerts} vértices no total. Clique em um talhão para selecionar.`);
@@ -195,14 +229,14 @@
   </Document>
 </kml>`;
         polygons = extractPolygons(sample);
-        selectedIdx = -1; polygonCoords = null; btnGerar.disabled = true; btnProximo.disabled = (polygons.length <= 1); dlEl.style.display = 'none';
+        selectedIdx = -1; polygonCoords = null; btnGerar.disabled = true; btnProximo.disabled = (polygons.length <= 1); dlEl.style.display = 'none'; dlPtsEl.style.display = 'none';
         drawAllPolygons(polygons);
         const bounds = L.latLngBounds(polygons.flatMap(pg => pg.coords.map(p => [p.lat, p.lon])));
         map.fitBounds(bounds.pad(0.2));
         logMsg('Exemplo com 2 talhões carregado. Clique para selecionar.');
       });
 
-      btnLimpar.addEventListener('click', () => { linesLayer.clearLayers(); logMsg('Pré-visualização removida.'); });
+      btnLimpar.addEventListener('click', () => { linesLayer.clearLayers(); pointsLayer.clearLayers(); logMsg('Pré-visualização removida.'); });
       btnProximo.addEventListener('click', () => {
         if (!polygons || polygons.length === 0) return;
         const next = (selectedIdx + 1) % polygons.length;
@@ -216,12 +250,21 @@
         const altitude = Math.max(0, parseFloat(altEl.value || '30'));
         const baseName = (selectedIdx>=0 && polygons[selectedIdx]?.name ? polygons[selectedIdx].name : 'Talhão');
         const prefix = (namePrefixEl.value || (baseName + ' ')).trim();
-        const { pathLL, segmentsLL } = buildParallelPathInsidePolygon(polygonCoords, spacing, angleDeg);
+        const { pathLL, segmentsLL } = buildParallelPathInsidePolygon(polygonCoords, spacing, angleDeg, Math.max(0, parseFloat(borderEl.value || '0')));
         drawPath(pathLL);
         const kml = exportPathToKml(pathLL, altitude, prefix);
         const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
         const url = URL.createObjectURL(blob);
         dlEl.href = url; dlEl.download = 'linhas-geradas.kml'; dlEl.style.display = 'inline-block';
+        // Pontos opcional
+        if (ptsToggleEl && ptsToggleEl.checked) {
+          const spPts = Math.max(1, parseFloat(ptsSpacingEl.value || '30'));
+          const pts = generatePointsAlongPath(pathLL, spPts);
+          const kmlPts = exportPointsToKml(pts, altitude, prefix);
+          const blobPts = new Blob([kmlPts], { type: 'application/vnd.google-earth.kml+xml' });
+          const urlPts = URL.createObjectURL(blobPts);
+          dlPtsEl.href = urlPts; dlPtsEl.download = 'pontos-gerados.kml'; dlPtsEl.style.display = 'inline-block';
+        } else { dlPtsEl.style.display = 'none'; }
         addPathToProject(prefix || baseName, altitude, pathLL);
         updateExportLink();
         logMsg(`Caminho contínuo gerado para "${prefix || 'Talhão'}" com ${segmentsLL.length} faixas.`, 'success');
@@ -283,20 +326,46 @@
         selectedIdx = idx;
         polygonCoords = polygons[idx].coords;
         btnGerar.disabled = false;
-        linesLayer.clearLayers();
+        linesLayer.clearLayers(); pointsLayer.clearLayers();
         if (drawAllPolygons.applyStyles) drawAllPolygons.applyStyles();
         if (fit) {
           const b = L.latLngBounds(polygonCoords.map(p => [p.lat, p.lon]));
           map.fitBounds(b.pad(0.15));
         }
+        updatePreview();
         logMsg(`Talhão selecionado: ${(polygons[idx].name || 'Sem Nome')} (#${idx+1}).`);
       }
 
       // Desenha caminho contínuo
       function drawPath(pathLL) {
-        linesLayer.clearLayers();
+        linesLayer.clearLayers(); pointsLayer.clearLayers();
         if (!pathLL || pathLL.length < 2) return;
         L.polyline(pathLL.map(p => [p.lat, p.lon]), { color: '#60a5fa', weight: 3 }).addTo(linesLayer);
+      }
+
+      function drawPointsPreview(points) {
+        pointsLayer.clearLayers();
+        if (!points || points.length === 0) return;
+        points.forEach((p, idx) => {
+          const m = L.circleMarker([p.lat, p.lon], { radius: 4, color: '#22c55e', weight: 2, fillOpacity: 0.85 });
+          m.bindTooltip(String(idx+1).padStart(3,'0'), { sticky: true });
+          pointsLayer.addLayer(m);
+        });
+      }
+
+      // Pré-visualização em tempo real (sem afetar o projeto)
+      function updatePreview() {
+        if (!polygonCoords || polygonCoords.length < 3) return;
+        const spacing = Math.max(1, parseFloat(espEl.value || '40'));
+        const angleDeg = Math.max(0, Math.min(179, parseFloat(angEl.value || '0')));
+        const borderM = Math.max(0, parseFloat(borderEl.value || '0'));
+        const { pathLL } = buildParallelPathInsidePolygon(polygonCoords, spacing, angleDeg, borderM);
+        drawPath(pathLL);
+        if (ptsToggleEl && ptsToggleEl.checked) {
+          const spPts = Math.max(1, parseFloat(ptsSpacingEl.value || '30'));
+          const pts = generatePointsAlongPath(pathLL, spPts);
+          drawPointsPreview(pts);
+        }
       }
 
       function addPathToProject(name, altitude, pathLL) {
@@ -365,7 +434,7 @@
       }
 
       // Geometria: gerar linhas paralelas e caminho contínuo dentro do polígono
-      function buildParallelPathInsidePolygon(polyLL, spacingMeters, angleDeg) {
+      function buildParallelPathInsidePolygon(polyLL, spacingMeters, angleDeg, marginMeters = 0) {
         // Converte para coordenadas projetadas (EPSG:3857) usando Leaflet
         const toM = (p) => L.CRS.EPSG3857.project(L.latLng(p.lat, p.lon));
         const toLL = (pt) => {
@@ -388,9 +457,13 @@
         // Garante pelo menos 1 passo
         const step = Math.max(0.1, spacingMeters);
         const offsets = [];
-        // Expande pequena margem para garantir cobertura total
-        minOff -= step; maxOff += step;
-        for (let off = minOff; off <= maxOff + 1e-6; off += step) offsets.push(off);
+        // Aplica bordadura lateral (afastamento em relação às bordas na normal)
+        const lateral = Math.max(0, marginMeters || 0);
+        const startOff = minOff + lateral;
+        const endOff = maxOff - lateral;
+        if (endOff - startOff >= step) {
+          for (let off = startOff; off <= endOff + 1e-6; off += step) offsets.push(off);
+        }
 
         // Função: interseção linha (dot(p,n)=off) com arestas do polígono
         const segments = [];
@@ -421,8 +494,20 @@
           if (ints.length < 2) continue;
           ints.sort((p, q) => p.s - q.s);
           for (let k = 0; k + 1 < ints.length; k += 2) {
-            const p0 = ints[k].pt;
-            const p1 = ints[k+1].pt;
+            let p0 = ints[k].pt;
+            let p1 = ints[k+1].pt;
+            // Aplica bordadura nas extremidades do segmento (ao longo de d)
+            const trim = Math.max(0, marginMeters || 0);
+            if (trim > 0) {
+              const vx = p1.x - p0.x, vy = p1.y - p0.y;
+              const len = Math.hypot(vx, vy);
+              if (len > 2*trim) {
+                p0 = { x: p0.x + d.x * trim, y: p0.y + d.y * trim };
+                p1 = { x: p1.x - d.x * trim, y: p1.y - d.y * trim };
+              } else {
+                continue; // segmento muito curto após bordadura
+              }
+            }
             segments.push({ a: p0, b: p1 });
           }
         }
@@ -455,8 +540,43 @@
         return { pathLL, segmentsLL };
       }
 
+      // Gera pontos igualmente espaçados ao longo de um caminho (pathLL) em metros
+      function generatePointsAlongPath(pathLL, spacingMeters) {
+        try {
+          const pts = [];
+          if (!pathLL || pathLL.length < 2) return pts;
+          const toM = (p) => L.CRS.EPSG3857.project(L.latLng(p.lat, p.lon));
+          const toLL = (pt) => { const ll = L.CRS.EPSG3857.unproject(L.point(pt.x, pt.y)); return { lat: ll.lat, lon: ll.lng }; };
+          const segs = [];
+          let total = 0;
+          for (let i = 0; i + 1 < pathLL.length; i++) {
+            const aLL = pathLL[i], bLL = pathLL[i+1];
+            const a = toM(aLL), b = toM(bLL);
+            const len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (len > 0) { segs.push({ a, b, len }); total += len; }
+          }
+          const step = Math.max(0.1, Number(spacingMeters) || 1);
+          if (total < step) return pts;
+          for (let d = step; d <= total + 1e-6; d += step) {
+            let acc = 0;
+            for (let i=0; i<segs.length; i++) {
+              const s = segs[i];
+              if (d <= acc + s.len || i === segs.length - 1) {
+                const t = Math.max(0, Math.min(1, (d - acc) / s.len));
+                const x = s.a.x + (s.b.x - s.a.x) * t;
+                const y = s.a.y + (s.b.y - s.a.y) * t;
+                pts.push(toLL({ x, y }));
+                break;
+              }
+              acc += s.len;
+            }
+          }
+          return pts;
+        } catch { return []; }
+      }
+
       // Exporta caminho contínuo em KML (único LineString)
-      function exportPathToKml(pathLL, altitude, prefix) {
+      /* function exportPathToKml(pathLL, altitude, prefix) {
         const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
         let out = '';
         out += '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -474,12 +594,12 @@
         out += '        <coordinates>\n';
         pathLL.forEach(p => {
           out += `          ${p.lon.toFixed(7)},${p.lat.toFixed(7)},${altitude}\
-      // Gera e desenha pr�-visualiza��o sem afetar o projeto
+      // Gera e desenha pr�-visualiza��o sem afetar o projeto
       function updatePreview() {
         if (!polygonCoords || polygonCoords.length < 3) return;
         const spacing = Math.max(1, parseFloat(espEl.value || '40'));
         const angleDeg = Math.max(0, Math.min(179, parseFloat(angEl.value || '0')));
-        const { pathLL } = buildParallelPathInsidePolygon(polygonCoords, spacing, angleDeg);
+        const { pathLL } = buildParallelPathInsidePolygon(polygonCoords, spacing, angleDeg, Math.max(0, parseFloat(borderEl.value || '0')));
         drawPath(pathLL);
       }n`;
         });
@@ -490,6 +610,34 @@
         out += '</kml>\n';
         return out;
       }
+      */
+
+      // Nova implementação correta de exportação KML para o caminho atual
+      function exportPathToKml(pathLL, altitude, prefix) {
+        const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        let out = '';
+        out += '<?xml version="1.0" encoding="UTF-8"?>\n';
+        out += '<kml xmlns="http://www.opengis.net/kml/2.2">\n';
+        out += '  <Document>\n';
+        out += '    <name>Caminho Boustrophedon</name>\n';
+        out += '    <Style id="lineStyle"><LineStyle><color>ff5fa8fa</color><width>3</width></LineStyle></Style>\n';
+        const name = (prefix ? esc(prefix) : 'Missao ');
+        out += '    <Placemark>\n';
+        out += `      <name>${name}Caminho</name>\n`;
+        out += '      <styleUrl>#lineStyle</styleUrl>\n';
+        out += '      <LineString>\n';
+        out += '        <tessellate>1</tessellate>\n';
+        out += '        <altitudeMode>relativeToGround</altitudeMode>\n';
+        out += '        <coordinates>\n';
+        pathLL.forEach(p => { out += `          ${p.lon.toFixed(7)},${p.lat.toFixed(7)},${altitude}\n`; });
+        out += '        </coordinates>\n';
+        out += '      </LineString>\n';
+        out += '    </Placemark>\n';
+        out += '  </Document>\n';
+        out += '</kml>\n';
+        return out;
+      }
+
       function exportProjectToKml(items) {
         const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
         let out = '';
@@ -523,8 +671,40 @@
         const url = URL.createObjectURL(blob);
         dlEl.href = url; dlEl.download = 'projeto-linhas.kml'; dlEl.style.display = 'inline-block';
       }
+
+      function exportPointsToKml(pointsLL, altitude, prefix) {
+        const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        let out = '';
+        out += '<?xml version="1.0" encoding="UTF-8"?>\n';
+        out += '<kml xmlns="http://www.opengis.net/kml/2.2">\n';
+        out += '  <Document>\n';
+        out += `    <name>${esc(prefix || 'Pontos')}</name>\n`;
+        out += '    <Style id="ptStyle"><IconStyle><color>ff22c55e</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle></Style>\n';
+        out += '    <Folder>\n';
+        out += '      <name>Pontos Gerados</name>\n';
+        pointsLL.forEach((p, i) => {
+          const nm = String(i+1).padStart(3, '0');
+          out += '      <Placemark>\n';
+          out += `        <name>${esc((prefix||'') + nm)}</name>\n`;
+          out += '        <styleUrl>#ptStyle</styleUrl>\n';
+          out += '        <Point>\n';
+          out += '          <altitudeMode>relativeToGround</altitudeMode>\n';
+          out += `          <coordinates>${p.lon.toFixed(7)},${p.lat.toFixed(7)},${altitude|0}</coordinates>\n`;
+          out += '        </Point>\n';
+          out += '      </Placemark>\n';
+        });
+        out += '    </Folder>\n';
+        out += '  </Document>\n';
+        out += '</kml>\n';
+        return out;
+      }
     </script>
   </body>
 </html>
+
+
+
+
+
 
 
