@@ -167,7 +167,7 @@
       <div class="grid">
         <div><label>Ordem de Serviço:</label><input id="os" type="text" /></div>
         <div><label>Data de Liberação:</label><input id="data" type="date" /></div>
-        <div><label>Piloto:</label><select id="piloto"><option value="Victor Hugo">Victor Hugo</option><option value="Pedro">Pedro</option><option value="Maicon">Maicon</option></select></div>
+        <div><label>Piloto:</label><select id="piloto"><option value="Victor Hugo">Victor Hugo</option><option value="Rafael">Rafael</option><option value="Tiago">Tiago</option></select></div>
         <div><label>Distância percorrida pelo drone:</label><div id="distTotal" class="value">-</div></div>
         <div><label>Velocidade média de aplicação (m/s):</label><input id="velMedia" type="text" value="9~10 m/s" /></div>
         <div><label>Equipamento:</label><input id="equip" type="text" value="Xfly 800" /></div>
@@ -244,7 +244,6 @@
 
 <script>
 let map;
-const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
 function meters(a, b) { return turf.distance(turf.point(a), turf.point(b), { units: 'meters' }); }
 
 // Formata inputs para sempre exibirem a unidade automaticamente
@@ -280,6 +279,46 @@ function attachUnitInput(id, unit){
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Ajustes solicitados: remover distancia, adicionar Operacao e limitar Equipamento
+  try {
+    // Remove o campo de distancia (linha contendo o valor com id distTotal)
+    const distEl = document.getElementById('distTotal');
+    if (distEl && distEl.parentElement) {
+      distEl.parentElement.remove();
+    }
+
+    // Inserir campo Operacao apos o campo Piloto
+    const pilotoDiv = Array.from(document.querySelectorAll('.grid > div')).find(d => {
+      const lbl = d.querySelector('label');
+      return lbl && lbl.textContent.trim().toLowerCase().startsWith('piloto');
+    });
+    if (pilotoDiv && pilotoDiv.parentElement) {
+      const opDiv = document.createElement('div');
+      const lbl = document.createElement('label');
+      lbl.textContent = 'Operacão:';
+      const sel = document.createElement('select');
+      sel.id = 'operacao';
+      ['1ª LIB. COTESIA - DRONE','2ª LIB. COTESIA - DRONE','3ª LIB. COTESIA - DRONE'].forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t; opt.textContent = t; sel.appendChild(opt);
+      });
+      opDiv.appendChild(lbl);
+      opDiv.appendChild(sel);
+      pilotoDiv.insertAdjacentElement('afterend', opDiv);
+    }
+
+    // Transformar Equipamento em select com duas opcoes
+    const equipInput = document.getElementById('equip');
+    if (equipInput) {
+      const sel = document.createElement('select');
+      sel.id = 'equip';
+      ['Xfly X800','Nexus NX6'].forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t; opt.textContent = t; sel.appendChild(opt);
+      });
+      equipInput.parentElement.replaceChild(sel, equipInput);
+    }
+  } catch (e) { console.warn('Ajustes de UI nao aplicados:', e); }
   map = L.map('map', { zoomDelta: 0.5, wheelPxPerZoomLevel: 60 }).setView([-15, -47], 12);
   L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}').addTo(map);
 
@@ -289,8 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const div = L.DomUtil.create('div', 'legend');
     div.innerHTML = `
       <b>Legenda</b><br>
-      <img src="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" style="width:16px;"> Ponto KML<br>
-      <span style="display:inline-block;width:20px;height:3px;background:#ffcc00;vertical-align:middle;"></span> Linha KML
+      <span style="display:inline-block;width:12px;height:12px;border:2px solid #ffffff;border-radius:50%;background:#006400;vertical-align:middle;margin-right:4px;"></span> Ponto KML<br>
     `;
     return div;
   };
@@ -325,9 +363,15 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       titleControl.addTo(map);
 
-      // Pontos com popup do nome do arquivo
+      // Pontos com estilo: circulo (borda branca, preenchimento verde escuro)
       L.geoJSON(points, {
-        pointToLayer: (_, latlng) => L.marker(latlng, { icon: blueIcon }),
+        pointToLayer: (_, latlng) => L.circleMarker(latlng, {
+          radius: 6,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#006400',
+          fillOpacity: 0.9
+        }),
         onEachFeature: function (feature, layer) {
           layer.bindPopup(`<b>${kmlFileName}</b>`);
         }
@@ -347,9 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         map.setView([points[0].geometry.coordinates[1], points[0].geometry.coordinates[0]], 16);
       }
 
-      let distKm = 0;
-      lines.forEach(l => { distKm += turf.length(l, { units: 'kilometers' }); });
-      document.getElementById('distTotal').innerText = distKm.toFixed(2) + ' km';
+      // distancia removida do relatorio
 
       document.getElementById('qtPontos').innerText = points.length;
 
