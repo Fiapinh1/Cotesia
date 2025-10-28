@@ -61,6 +61,9 @@
         font-size: 22px;
         font-weight: 700;
         letter-spacing: .3px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
       .clock {
@@ -99,6 +102,8 @@
 
       .btn .tag { font-size: 12px; color: var(--muted); font-weight: 500; }
       .btn .label { font-size: 16px; }
+      .btn svg { width: 20px; height: 20px; stroke-width: 2; }
+      .title svg { width: 22px; height: 22px; stroke-width: 2; }
 
       .calendar {
         display: grid;
@@ -151,6 +156,9 @@
           <a class="btn" href="relatorio_cotesia.html">
             <span class="label">Gerar Relatório</span>
           </a>
+          <a class="btn" href="gerar_planos_voo.html">
+            <span class="label">Gerar Planos</span>
+          </a>
         </div>
       </section>
 
@@ -167,6 +175,7 @@
       </aside>
     </div>
 
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script>
       function two(n){ return String(n).padStart(2,'0'); }
 
@@ -234,6 +243,36 @@
       updateClock();
       buildCalendar();
       setInterval(updateClock, 1000);
+
+      // Inject icons into buttons and header
+      (function(){
+        try {
+          const iconMap = {
+            'gerar_linhas.html': 'git-branch',
+            'gerar_pontos.html': 'map-pin',
+            'relatorio_cotesia.html': 'file-text',
+            'gerar_planos_voo.html': 'navigation'
+          };
+          document.querySelectorAll('.btns a.btn').forEach(a => {
+            const href = a.getAttribute('href') || '';
+            const name = iconMap[href];
+            if (name && !a.querySelector('[data-lucide]')) {
+              const i = document.createElement('i');
+              i.setAttribute('data-lucide', name);
+              a.insertBefore(i, a.firstChild);
+            }
+          });
+          const title = document.querySelector('.title');
+          if (title && !title.querySelector('[data-lucide]')) {
+            const i = document.createElement('i');
+            i.setAttribute('data-lucide', 'home');
+            title.insertBefore(i, title.firstChild);
+          }
+        } catch (e) { /* no-op */ }
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons();
+        }
+      })();
     </script>
   </body>
 </html>
