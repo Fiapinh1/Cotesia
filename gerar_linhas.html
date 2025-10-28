@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Criar Linhas Paralelas dentro de Polígono (KML)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
       :root {
         --bg: #0f172a; --panel: #111827; --soft: #1f2937; --text: #e5e7eb;
@@ -34,10 +35,24 @@
       a { color: #93c5fd; }
       #map { height: 62vh; width: 100%; margin-top: 16px; border-radius: 10px; border: 1px solid #1f2937; }
       .angle-value { min-width: 60px; text-align: right; }
+      .top-nav { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 12px; }
+      .nav-btn { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; background: var(--soft); color: var(--text); border: 1px solid #374151; padding: 8px 12px; border-radius: 999px; font-weight: 600; transition: .15s ease; }
+      .nav-btn:hover { border-color: #4b5563; transform: translateY(-1px); }
+      .nav-btn svg { width: 18px; height: 18px; }
     </style>
   </head>
   <body>
     <div class="wrap">
+      <div class="top-nav">
+        <a href="index.html" class="nav-btn" title="Voltar para a Home">
+          <i data-lucide="home"></i>
+          <span>Home</span>
+        </a>
+        <a href="gerar_pontos.html" class="nav-btn" title="Ir para Gerar Pontos">
+          <i data-lucide="map-pin"></i>
+          <span>Gerar Pontos</span>
+        </a>
+      </div>
       <div class="card">
         <h1>Criar Linhas Paralelas dentro de Polígono (KML)</h1>
         <p class="helper">Carregue um KML com a área demarcada (<code>&lt;Polygon&gt;</code>). Ajuste espaçamento entre linhas (m), ângulo (°) e altitude (m). Gere linhas paralelas "indo e voltando" dentro do polígono e exporte em KML. Base de satélite incluída para melhor visualização.</p>
@@ -50,7 +65,7 @@
           </div>
         </div>
 
-        <div class="row">
+        <div class="row single">
           <div class="field">
             <label for="espacamento">Espaçamento entre linhas (m)</label>
             <input id="espacamento" type="number" min="1" step="1" value="40" />
@@ -114,6 +129,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
+      if (window.lucide && typeof window.lucide.createIcons === 'function') { window.lucide.createIcons(); }
       // Estado global simples
       let polygonCoords = null; // Array [{lat,lon}] do outer ring (selecionado)
       let polygons = []; // Lista de talhões [{coords, name}]
@@ -701,9 +717,6 @@
     </script>
   </body>
 </html>
-
-
-
 
 
 
